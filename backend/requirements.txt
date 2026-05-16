@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic-settings
+python-dotenv
+openai-whisper
+google-generativeai
+moviepy
+ffmpeg-python
+python-multipart
+torch
+typing-extensions
+sqlalchemy
+python-jose[cryptography]
+passlib[bcrypt]
+google-auth
+google-auth-oauthlib
+requests

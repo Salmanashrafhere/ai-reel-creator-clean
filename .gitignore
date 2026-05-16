@@ -1,0 +1,32 @@
+# dependencies
+node_modules/
+venv/
+
+# env
+.env
+.env.local
+
+# next
+.next/
+
+# python
+__pycache__/
+*.pyc
+
+# uploads
+uploads/
+outputs/
+audio/
+clips/
+transcripts/
+
+# logs
+*.log
+
+# database
+*.db
+backend/uploads/
+backend/outputs/
+backend/audio/
+backend/clips/
+backend/transcripts/

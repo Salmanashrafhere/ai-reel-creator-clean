@@ -65,10 +65,11 @@ export default function ReelCard({
           muted
           loop
           preload="metadata"
+          crossOrigin="anonymous"
         />
         
-        {/* Social Media Style Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/90 pointer-events-none"></div>
+        {/* Social Media Style Overlays (Actions Only) */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/60 pointer-events-none"></div>
 
         {/* Top Badges */}
         <div className="absolute top-5 left-5 right-5 flex justify-between items-start pointer-events-auto">
@@ -77,6 +78,14 @@ export default function ReelCard({
               <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></span>
               AI Viral Pick
             </div>
+            {reel.viral_score > 0 && (
+              <div className="flex items-center gap-2 bg-gradient-to-r from-amber-500/30 to-rose-500/30 backdrop-blur-xl text-white text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest shadow-lg border border-white/20">
+                <svg className="w-3 h-3 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+                Score: {reel.viral_score}
+              </div>
+            )}
             {reel.style && (
               <span className={`text-[10px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest shadow-lg backdrop-blur-xl border ${
                 reel.style === 'hype' ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' :
@@ -104,7 +113,7 @@ export default function ReelCard({
         </div>
 
         {/* Right Action Sidebar (SaaS Style) */}
-        <div className="absolute right-4 bottom-32 flex flex-col gap-4 pointer-events-auto">
+        <div className="absolute right-4 bottom-10 flex flex-col gap-4 pointer-events-auto">
           <button 
             onClick={(e) => {
               e.stopPropagation();
@@ -156,36 +165,6 @@ export default function ReelCard({
           </button>
         </div>
 
-        {/* Bottom Info Overlay (SaaS Style) */}
-        <div className="absolute bottom-0 left-0 right-0 p-6 pt-24 bg-gradient-to-t from-zinc-950 via-zinc-950/60 to-transparent pointer-events-none">
-          <div className="space-y-3 pointer-events-auto">
-            <h3 className="text-xl font-bold text-white leading-tight line-clamp-2 group-hover:text-blue-400 transition-colors">
-              {reel.title}
-            </h3>
-            
-            {reel.hook && (
-              <p className="text-sm font-semibold text-blue-400/90 line-clamp-1">
-                <span className="text-white/40 font-medium mr-2">Hook:</span>
-                "{reel.hook}"
-              </p>
-            )}
-
-            <p className="text-sm text-zinc-400 line-clamp-2 leading-relaxed font-medium italic">
-              {reel.reason}
-            </p>
-
-            {reel.hashtags && reel.hashtags.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {Array.isArray(reel.hashtags) ? reel.hashtags.map((tag: string, i: number) => (
-                  <span key={i} className="text-[10px] font-bold text-blue-500/80 hover:text-blue-400 transition-colors bg-blue-500/5 px-2 py-0.5 rounded-md border border-blue-500/10">
-                    #{tag.replace('#', '').trim()}
-                  </span>
-                )) : <span className="text-[10px] font-bold text-blue-500/80">#{reel.hashtags}</span>}
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Play Icon Center (Visible on hover) */}
         {!isHovered && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -196,6 +175,27 @@ export default function ReelCard({
             </div>
           </div>
         )}
+      </div>
+
+      {/* Info Section Below Video */}
+      <div className="p-5 bg-zinc-950/30 border-t border-white/5">
+        <h3 className="text-sm font-bold text-white leading-tight line-clamp-1 group-hover:text-blue-400 transition-colors mb-2">
+          {reel.title}
+        </h3>
+        
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-[11px] text-zinc-500 line-clamp-1 italic flex-grow" title={reel.score_reason || reel.reason}>
+            {reel.score_reason || reel.reason}
+          </p>
+          
+          {reel.hashtags && reel.hashtags.length > 0 && (
+            <div className="flex gap-1 shrink-0">
+              <span className="text-[9px] font-bold text-blue-500/60">
+                #{Array.isArray(reel.hashtags) ? reel.hashtags[0].replace('#', '') : reel.hashtags.split(' ')[0].replace('#', '')}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

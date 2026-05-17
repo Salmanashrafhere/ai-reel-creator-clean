@@ -67,6 +67,7 @@ app.add_middleware(
 )
 
 # Serve generated reels as static files
+print(f"Mounting static directories:\n- Outputs: {settings.OUTPUT_DIR}\n- Thumbnails: {settings.THUMBNAIL_DIR}")
 app.mount("/outputs", StaticFiles(directory=settings.OUTPUT_DIR), name="outputs")
 app.mount("/thumbnails", StaticFiles(directory=settings.THUMBNAIL_DIR), name="thumbnails")
 
@@ -129,7 +130,9 @@ async def get_user_reels(user: DBUser = Depends(get_current_user), db: Session =
         "hook": r.hook,
         "style": r.style,
         "caption": r.caption,
-        "hashtags": json.loads(r.hashtags) if r.hashtags else []
+        "hashtags": json.loads(r.hashtags) if r.hashtags else [],
+        "viral_score": r.viral_score,
+        "score_reason": r.score_reason
     } for r in reels]
 
 def process_video_task(job_id: str, file_path: str, user_id: Optional[int] = None):
@@ -164,6 +167,10 @@ def process_video_task(job_id: str, file_path: str, user_id: Optional[int] = Non
         print(f"[JOB {job_id}] Analyzing transcript with AI...")
         jobs[job_id]["message"] = "Analyzing transcript for viral moments with Gemini AI..."
         best_moments = processor.detect_best_moments(transcript)
+        
+        # Sort moments by viral score (highest first)
+        best_moments = sorted(best_moments, key=lambda x: x.get('viral_score', 0), reverse=True)
+        
         jobs[job_id]["progress"] = 70
         
         # Step 5 & 6: Cut Clips & Add Captions
@@ -184,34 +191,21 @@ def process_video_task(job_id: str, file_path: str, user_id: Optional[int] = Non
             print(f"[JOB {job_id}] Processing clip {i+1}/{num_moments}: {moment['title']}")
             
             output_filename = f"reel_{job_id}_{i}.mp4"
-            temp_cut_path = os.path.join(settings.CLIPS_DIR, f"temp_{output_filename}")
             final_output_path = os.path.join(settings.OUTPUT_DIR, output_filename)
             
-            # Cut clip (Step 5)
-            duration = moment['end'] - moment['start']
-            print(f"[JOB {job_id}] Cutting clip {i+1} ({duration:.2f}s)...")
-            processor.cut_clip(file_path, moment['start'], moment['end'], temp_cut_path)
-            
-            # Add captions (Step 6)
-            print(f"[JOB {job_id}] Adding captions to clip {i+1} (style: {moment.get('style', 'minimal')})...")
-            final_path = processor.add_captions(
-                temp_cut_path, 
-                transcript['segments'], 
+            # Unified Processing (Step 5 & 6)
+            print(f"[JOB {job_id}] Processing unified reel {i+1} (style: {moment.get('style', 'minimal')})...")
+            final_path = processor.process_reel(
+                file_path,
+                moment['start'],
+                moment['end'],
+                transcript['segments'],
                 final_output_path,
-                start_offset=moment['start'],
-                duration=duration,
-                style_type=moment.get('style', 'minimal')
+                style_type=moment.get('style', 'minimal'),
+                hook=moment.get('hook')
             )
             
-            # If captioning failed and returned the temp path, we use the temp path as final
             actual_output_filename = output_filename
-            if final_path == temp_cut_path:
-                print(f"[JOB {job_id}] Captions failed for clip {i+1}, using raw cut.")
-                # Rename temp to final so the URL remains consistent
-                os.rename(temp_cut_path, final_output_path)
-            elif os.path.exists(temp_cut_path):
-                # Clean up temp cut if captions were successfully burned into a new file
-                os.remove(temp_cut_path)
             
             # Step 7: Generate Thumbnail (New)
             print(f"[JOB {job_id}] Generating thumbnail for clip {i+1}...")
@@ -232,7 +226,9 @@ def process_video_task(job_id: str, file_path: str, user_id: Optional[int] = Non
                 "style": moment.get('style', 'minimal'),
                 "hook": moment.get('hook', ''),
                 "caption": moment.get('caption', ''),
-                "hashtags": moment.get('hashtags', [])
+                "hashtags": moment.get('hashtags', []),
+                "viral_score": moment.get('viral_score', 0),
+                "score_reason": moment.get('score_reason', '')
             }
             clips.append(clip_data)
 
@@ -248,7 +244,9 @@ def process_video_task(job_id: str, file_path: str, user_id: Optional[int] = Non
                     hook=clip_data["hook"],
                     style=clip_data["style"],
                     caption=clip_data["caption"],
-                    hashtags=json.dumps(clip_data["hashtags"])
+                    hashtags=json.dumps(clip_data["hashtags"]),
+                    viral_score=clip_data["viral_score"],
+                    score_reason=clip_data["score_reason"]
                 )
                 db.add(db_reel)
                 db.commit()
@@ -305,4 +303,6 @@ async def health_check():
     return {"status": "ok"}
 
 if __name__ == "__main__":
+    # We use a string for the app to allow reload to work correctly
+    # And we specify the host and port
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

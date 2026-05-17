@@ -53,8 +53,6 @@ export default function Home() {
     
     if (!clientId) {
       console.error("[Frontend] NEXT_PUBLIC_GOOGLE_CLIENT_ID is missing! Check your .env.local");
-    } else {
-      console.log("[Frontend] Google Client ID loaded:", clientId.substring(0, 10) + "...");
     }
 
     // 1. Load user from localStorage
@@ -65,82 +63,78 @@ export default function Home() {
 
     // 2. Initialize and Render Google Auth
     const initAndRender = () => {
-      if (typeof window === "undefined" || !(window as any).google?.accounts?.id || !isMounted.current || !clientId) return;
+      if (typeof window === "undefined" || !clientId || !isMounted.current) return;
+      
+      const google = (window as any).google;
+      if (!google?.accounts?.id) {
+        // If not loaded yet, retry in a bit
+        setTimeout(initAndRender, 500);
+        return;
+      }
 
       // Prevent duplicate initialization
       if (!googleAuthInitialized.current) {
         try {
-          (window as any).google.accounts.id.initialize({
+          google.accounts.id.initialize({
             client_id: clientId,
             callback: handleCredentialResponse,
             auto_select: false,
-            use_fedcm_for_prompt: false, // Explicitly disable FedCM to avoid NetworkError on localhost
-            itp_support: false, // Disable ITP support for localhost to reduce complexity
+            use_fedcm_for_prompt: true, // Enable FedCM as it's the modern standard
             ux_mode: "popup",
             cancel_on_tap_outside: true,
           });
           googleAuthInitialized.current = true;
-          console.log("[Frontend] GSI Initialized with Client ID:", clientId.substring(0, 10) + "...");
+          console.log("[Frontend] GSI Initialized");
         } catch (err) {
           console.error("[Frontend] GSI Init Failed:", err);
         }
       }
 
-      // Render button if not logged in and container exists
-      if (!user && !showDashboard) {
+      // Render button if not logged in
+      if (!user) {
         const btnContainer = document.getElementById("google-login-btn");
         if (btnContainer) {
-          btnContainer.innerHTML = ""; // Clear to prevent duplicates
           try {
-            (window as any).google.accounts.id.renderButton(btnContainer, {
-              theme: "outline",
+            google.accounts.id.renderButton(btnContainer, {
+              theme: "filled_blue", // Better for dark SaaS UI
               size: "large",
               shape: "pill",
               text: "signin_with",
+              logo_alignment: "left",
+              width: 200
             });
             console.log("[Frontend] Google Sign-In button rendered");
           } catch (err) {
             console.error("[Frontend] GSI Button Render Failed:", err);
           }
 
-          // One Tap Prompt (only once per session/mount)
-          if (!googlePromptCalled.current && !localStorage.getItem("user")) {
-            setTimeout(() => {
-              if (isMounted.current && !googlePromptCalled.current) {
-                console.log("[Frontend] Attempting Google One Tap prompt...");
-                (window as any).google.accounts.id.prompt((notification: any) => {
-                  console.log("[Frontend] One Tap notification:", notification.getMomentType());
-                  if (notification.isNotDisplayed()) {
-                    console.warn("[Frontend] One Tap not displayed:", notification.getNotDisplayedReason());
-                    googlePromptCalled.current = false; // Allow retry if it wasn't shown
-                  } else if (notification.isSkippedMoment()) {
-                    console.log("[Frontend] One Tap skipped:", notification.getSkippedReason());
-                  } else if (notification.isDismissedMoment()) {
-                    console.log("[Frontend] One Tap dismissed:", notification.getDismissedReason());
-                  }
-                });
-                googlePromptCalled.current = true;
+          // One Tap Prompt (only once per session)
+          if (!googlePromptCalled.current) {
+            google.accounts.id.prompt((notification: any) => {
+              if (notification.isNotDisplayed()) {
+                console.warn("[Frontend] One Tap not displayed:", notification.getNotDisplayedReason());
               }
-            }, 5000); // Increased delay to ensure stable environment
+            });
+            googlePromptCalled.current = true;
           }
+        } else {
+          // Container not found yet, retry
+          setTimeout(initAndRender, 100);
         }
       }
     };
 
-    if (isScriptLoaded || (typeof window !== "undefined" && (window as any).google?.accounts?.id)) {
-      initAndRender();
-    }
+    initAndRender();
 
     return () => {
       isMounted.current = false;
-      // Cleanup: Cancel any outstanding prompts
       if (typeof window !== "undefined" && (window as any).google?.accounts?.id) {
         try {
           (window as any).google.accounts.id.cancel();
         } catch (e) {}
       }
     };
-  }, [user, showDashboard, isScriptLoaded]);
+  }, [user, isScriptLoaded]);
 
   const handleCredentialResponse = async (response: any) => {
     try {
@@ -177,9 +171,16 @@ export default function Home() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
-      setHistory(data);
+      
+      if (response.ok && Array.isArray(data)) {
+        setHistory(data);
+      } else {
+        console.error("Fetch history failed:", data.detail || "Unknown error");
+        setHistory([]);
+      }
     } catch (error) {
       console.error("Fetch history failed:", error);
+      setHistory([]);
     } finally {
       setLoadingHistory(false);
     }
@@ -358,7 +359,7 @@ export default function Home() {
       
       <Script 
         src="https://accounts.google.com/gsi/client" 
-        strategy="lazyOnload" 
+        strategy="afterInteractive" 
         onLoad={() => setIsScriptLoaded(true)}
       />
       
@@ -401,7 +402,7 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div id="google-login-btn"></div>
+            <div id="google-login-btn" className="min-w-[200px] min-h-[40px] flex items-center justify-end"></div>
           )}
         </div>
       </header>
@@ -415,6 +416,17 @@ export default function Home() {
                   <h2 className="text-4xl font-bold tracking-tight text-white">Reel Library</h2>
                   <p className="text-zinc-500">Your collection of AI-generated viral moments.</p>
                 </div>
+                {history && history.length > 0 && (
+                  <button
+                    onClick={fetchHistory}
+                    className="flex items-center gap-2 text-sm font-semibold text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <svg className={`w-4 h-4 ${loadingHistory ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh
+                  </button>
+                )}
               </div>
 
               {loadingHistory ? (
@@ -425,23 +437,7 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-              ) : history.length === 0 ? (
-                <div className="text-center py-32 bg-white/5 rounded-[3rem] border border-white/10 backdrop-blur-sm">
-                  <div className="w-20 h-20 bg-zinc-900 rounded-3xl flex items-center justify-center mx-auto mb-6 text-zinc-600 border border-white/5">
-                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                    </svg>
-                  </div>
-                  <h3 className="text-2xl font-bold text-white">No reels yet</h3>
-                  <p className="text-zinc-500 mt-2 max-w-xs mx-auto">Upload a video to start generating viral content for your social media.</p>
-                  <button
-                    onClick={() => setShowDashboard(false)}
-                    className="mt-8 bg-blue-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 active:scale-95"
-                  >
-                    Start Creating
-                  </button>
-                </div>
-              ) : (
+              ) : (history && Array.isArray(history) && history.length > 0) ? (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {history.map((reel, index) => (
                     <ReelCard
@@ -456,6 +452,22 @@ export default function Home() {
                       copiedId={copiedId}
                     />
                   ))}
+                </div>
+              ) : (
+                <div className="text-center py-32 bg-white/5 rounded-[3rem] border border-white/10 backdrop-blur-sm">
+                  <div className="w-20 h-20 bg-zinc-900 rounded-3xl flex items-center justify-center mx-auto mb-6 text-zinc-600 border border-white/5">
+                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                  </div>
+                  <h3 className="text-2xl font-bold text-white">No reels yet</h3>
+                  <p className="text-zinc-500 mt-2 max-w-xs mx-auto">Upload a video to start generating viral content for your social media.</p>
+                  <button
+                    onClick={() => setShowDashboard(false)}
+                    className="mt-8 bg-blue-600 text-white px-8 py-3 rounded-2xl font-bold hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20 active:scale-95"
+                  >
+                    Start Creating
+                  </button>
                 </div>
               )}
             </section>

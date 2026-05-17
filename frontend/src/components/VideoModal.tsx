@@ -47,11 +47,8 @@ export default function VideoModal({ isOpen, onClose, videoUrl, title }: VideoMo
           controls
           autoPlay
           playsInline
+          crossOrigin="anonymous"
         />
-
-        <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black via-black/40 to-transparent">
-          <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
-        </div>
       </div>
       
       {/* Overlay click to close */}

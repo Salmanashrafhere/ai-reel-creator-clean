@@ -4,8 +4,10 @@ from sqlalchemy.orm import sessionmaker, relationship
 import datetime
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, 'reels.db')}"
+# Move database to project root to avoid Uvicorn reload loops
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
+DATABASE_URL = f"sqlite:///{os.path.join(PROJECT_ROOT, 'reels.db')}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -36,6 +38,8 @@ class Reel(Base):
     style = Column(String)
     caption = Column(Text)
     hashtags = Column(Text) # Stored as JSON string
+    viral_score = Column(Integer, default=0)
+    score_reason = Column(Text)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     owner = relationship("User", back_populates="reels")

@@ -29,23 +29,33 @@ class GeminiAnalyzer:
         - 'funny': Comedic, witty, or unexpected.
         - 'minimal': Clean, simple, focus on the speaker.
 
-        IMPORTANT: If a moment is particularly strong, you can suggest two different variations of it with different styles (e.g., one 'hype' version and one 'minimal' version).
-
         For each moment variation, provide:
         1. Start timestamp
-        2. End timestamp
-        3. A catchy, viral title for the reel
-        4. A brief reason why this moment is viral-worthy
+        2. End timestamp (Optimal length for virality is 7-25 seconds).
+        3. A catchy, viral title for the reel.
+        4. A brief reason why this moment is viral-worthy.
         5. The assigned style from the list above.
-        6. A powerful "hook line" (text overlay for the first 3 seconds).
-        7. A complete Instagram caption with emojis.
+        6. A powerful "viral hook line" (text overlay for the first 2-3 seconds). 
+           - MUST be 8-12 words max.
+           - MUST use high-attention phrases (e.g., "WAIT FOR THIS", "You are NOT ready for this", "STOP SCROLLING").
+        7. A complete Instagram caption. 
+           - MUST include context-aware emojis:
+             - Positive/Exciting → 🔥 🚀 😍 💯
+             - Shock/Surprise → 😱 😳 🤯
+             - Funny/Humorous → 😂 🤣
+           - LIMIT to exactly 1-2 emojis per caption.
         8. A set of 5-10 relevant trending hashtags.
+        9. A "viral_score" (0-100) based on:
+           - Emotional intensity (high impact keywords like INSANE, CRAZY, WOW).
+           - Hook strength (curiosity gap).
+           - Retention potential (fast pace, clear message).
+           - Length optimization (7-25s is best).
+        10. A "score_reason" explaining the 0-100 score.
         
         Format your response as a JSON array of objects with the keys: 
-        "start", "end", "title", "reason", "style", "hook", "caption", "hashtags".
+        "start", "end", "title", "reason", "style", "hook", "caption", "hashtags", "viral_score", "score_reason".
         Ensure the timestamps are precise and correspond to the input.
-        Each reel should ideally be between 15 to 60 seconds long.
-
+        
         Transcript:
         {formatted_transcript}
         """

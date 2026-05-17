@@ -90,9 +90,11 @@ class VideoProcessor:
                     "start": max(0, seg['start'] - 2), # Buffer before
                     "title": f"Viral Moment: {seg['text'].strip()[:30]}...",
                     "reason": f"Found key insight: '{seg['text'].strip()}'",
-                    "hook": "Wait for it...",
+                    "hook": "STOP SCROLLING! Watch this!",
                     "caption": f"You won't believe this! 😱 {seg['text'].strip()} #viral #insights",
-                    "hashtags": ["viral", "shorts", "reels", "trending", "mustwatch"]
+                    "hashtags": ["viral", "shorts", "reels", "trending", "mustwatch"],
+                    "viral_score": 85,
+                    "score_reason": "Contains high-impact viral keywords and strong emotional hook."
                 }
             
             # If we have a moment and it's reached ~30-45 seconds, close it
@@ -113,9 +115,11 @@ class VideoProcessor:
                 "title": "Quick Insight",
                 "reason": "Introduction and initial overview.",
                 "style": "minimal",
-                "hook": "Watch this overview!",
-                "caption": "Check out these quick insights! 💡 #learning #overview",
-                "hashtags": ["insight", "education", "tips"]
+                "hook": "STOP SCROLLING! Watch this!",
+                "caption": "Check out these quick insights! 🚀🔥 #learning #overview",
+                "hashtags": ["insight", "education", "tips"],
+                "viral_score": 75,
+                "score_reason": "Solid introduction with clear educational value."
             })
             # A middle segment if long enough
             if segments[-1]['end'] > 60:
@@ -125,9 +129,11 @@ class VideoProcessor:
                     "title": "Deep Dive",
                     "reason": "Key explanation in the middle.",
                     "style": "educational",
-                    "hook": "Let's dive deeper.",
-                    "caption": "Deep diving into the details! 🧐 #deepdive #knowledge",
-                    "hashtags": ["knowledge", "expert", "learning"]
+                    "hook": "THE SECRET YOU NEED TO KNOW",
+                    "caption": "Deep diving into the details! 😍🚀 #deepdive #knowledge",
+                    "hashtags": ["knowledge", "expert", "learning"],
+                    "viral_score": 80,
+                    "score_reason": "Mid-video insight with high retention potential."
                 })
             # A variation of the first segment with 'hype' style
             best_moments.append({
@@ -136,9 +142,11 @@ class VideoProcessor:
                 "title": "Intro (Hype Version)",
                 "reason": "High-energy version of the intro.",
                 "style": "hype",
-                "hook": "YOU NEED TO SEE THIS!",
-                "caption": "STOP EVERYTHING! You need to see this intro! 🔥 #hype #fire",
-                "hashtags": ["hype", "viral", "trending"]
+                "hook": "YOU WON'T BELIEVE THIS!",
+                "caption": "STOP EVERYTHING! You need to see this! 😱🔥 #hype #fire",
+                "hashtags": ["hype", "viral", "trending"],
+                "viral_score": 90,
+                "score_reason": "High energy hook combined with viral keyword detection."
             })
             
         return best_moments
@@ -161,105 +169,128 @@ class VideoProcessor:
             print(f"Error getting video info: {e}")
             return 1920, 1080 # Default fallback
 
-    def cut_clip(self, video_path, start_time, end_time, output_path):
+    def generate_srt(self, segments, start_offset, duration, srt_path, hook=None):
         """
-        Step 5: FFmpeg Cut Clips & Export vertical 9:16 reels.
-        Includes HD rendering, smart cropping/blur background, and smooth transitions.
+        Helper to generate a clean SRT file for a specific clip timeframe.
+        Implements improved timing sync:
+        - Prevents overlapping segments
+        - Enforces minimum duration (1.2s)
+        - Enforces maximum duration (4s)
+        - Adds small buffers for smooth transitions
+        - Aligns with the viral hook
         """
-        print(f"Cutting vertical HD reel from {start_time} to {end_time}...")
+        end_time = start_offset + duration
+        MIN_DURATION = 1.2
+        MAX_DURATION = 4.0
+        GAP = 0.05 # Small gap between segments for readability
+        
+        # Filter and deduplicate segments
+        relevant_segments = []
+        seen_texts = set()
+        
+        for s in segments:
+            if s['start'] < end_time and s['end'] > start_offset:
+                text = s['text'].strip()
+                if text and text not in seen_texts:
+                    relevant_segments.append(s)
+                    seen_texts.add(text)
+        
+        def format_timestamp(seconds):
+            if seconds < 0: seconds = 0
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            millis = int((seconds - int(seconds)) * 1000)
+            return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+
+        def highlight_text(text):
+            # TikTok/Reels style: Highlight emotional and viral keywords in yellow
+            viral_keywords = [
+                "INSANE", "CRAZY", "SHOCK", "WOW", "NEVER", "UNBELIEVABLE",
+                "secret", "always", "stop", "listen", "hack", "mistake", "failure", 
+                "success", "money", "growth", "viral", "trending", "results", 
+                "important", "amazing", "incredible", "power", "motivation", 
+                "change", "life", "results", "proven", "hidden", "love", "heart", 
+                "scary", "truth", "exposed", "warning", "don't"
+            ]
+            
+            import re
+            for word in viral_keywords:
+                # Case-insensitive replacement with yellow color tag
+                pattern = re.compile(rf'\b({re.escape(word)})\b', re.IGNORECASE)
+                text = pattern.sub(r'<font color="#FFFF00">\1</font>', text)
+            return text
+
+        with open(srt_path, "w", encoding="utf-8") as f:
+            subtitle_index = 1
+            last_end_time = 0.0
+            
+            # 1. Insert Viral Hook if provided (First 2.5 seconds)
+            if hook:
+                f.write(f"{subtitle_index}\n")
+                f.write(f"00:00:00,000 --> 00:00:02,500\n")
+                # Hooks are already punchy, let's keep them clean or also highlight
+                f.write(f"{highlight_text(hook.upper())}\n\n")
+                subtitle_index += 1
+                last_end_time = 2.5 + GAP
+
+            # 2. Add transcript segments with improved timing
+            for seg in relevant_segments:
+                # Calculate raw local timing
+                raw_start = seg['start'] - start_offset
+                raw_end = seg['end'] - start_offset
+                
+                # Apply timing constraints
+                # Start must be at least last_end_time + GAP
+                s = max(last_end_time, raw_start)
+                
+                # End must be at least s + MIN_DURATION
+                e = max(s + MIN_DURATION, raw_end)
+                
+                # Limit duration to MAX_DURATION
+                if e - s > MAX_DURATION:
+                    e = s + MAX_DURATION
+                
+                # Cap at the total duration of the clip
+                if e > duration:
+                    e = duration
+                    # If capping made the segment too short, try to push the start back 
+                    # but not beyond the previous segment
+                    if e - s < MIN_DURATION:
+                        s = max(last_end_time, e - MIN_DURATION)
+                
+                # Final check to ensure validity
+                if s >= e or (e - s) < 0.1: # Skip if practically zero duration
+                    continue
+
+                f.write(f"{subtitle_index}\n")
+                f.write(f"{format_timestamp(s)} --> {format_timestamp(e)}\n")
+                
+                # Apply highlighting to segment text
+                styled_text = highlight_text(seg['text'].strip())
+                f.write(f"{styled_text}\n\n")
+                
+                subtitle_index += 1
+                last_end_time = e + GAP
+                
+        return srt_path
+
+    def process_reel(self, video_path, start_time, end_time, transcript_segments, output_path, style_type="minimal", hook=None):
+        """
+        Unified Step 5 & 6: FFmpeg Cut, Format 9:16, and Burn Captions in ONE PASS.
+        This is faster, higher quality, and eliminates the double-captioning bug.
+        """
+        print(f"Processing unified vertical HD reel from {start_time} to {end_time} (style: {style_type})...")
+        srt_path = output_path.replace(".mp4", ".srt")
         try:
             duration = end_time - start_time
             width, height = self.get_video_info(video_path)
             aspect_ratio = width / height
             
-            fade_duration = 0.5
-            fade_out_start = max(0, duration - fade_duration)
-            
-            # Smart Formatting Logic:
-            if aspect_ratio > 0.6: # Wider than 9:16 (Landscape or Square)
-                # Use blurred background + center overlay for a professional look
-                video_filters = (
-                    f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg];"
-                    f"[0:v]scale=1080:-1[fg];"
-                    f"[bg][fg]overlay=(W-w)/2:(H-h)/2,"
-                    f"fade=t=in:st=0:d={fade_duration},fade=t=out:st={fade_out_start}:d={fade_duration}"
-                )
-            else: # Already vertical or very narrow
-                # Simple scale and crop
-                video_filters = (
-                    f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
-                    f"fade=t=in:st=0:d={fade_duration},fade=t=out:st={fade_out_start}:d={fade_duration}"
-                )
-                
-            audio_filters = f"[0:a]afade=t=in:st=0:d={fade_duration},afade=t=out:st={fade_out_start}:d={fade_duration}"
-            
-            command = [
-                'ffmpeg', '-y',
-                '-ss', str(start_time),
-                '-to', str(end_time),
-                '-i', video_path,
-                '-filter_complex', video_filters + "[v];" + audio_filters + "[a]",
-                '-map', '[v]',
-                '-map', '[a]',
-                '-c:v', 'libx264',
-                '-preset', 'slow',
-                '-crf', '18',
-                '-pix_fmt', 'yuv420p',
-                '-c:a', 'aac',
-                '-b:a', '192k',
-                output_path
-            ]
-            
-            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-            print(f"Successfully exported high-quality reel to {output_path}")
-            return output_path
-        except subprocess.CalledProcessError as e:
-            error_msg = e.stderr.decode()
-            print(f"FFmpeg cutting error: {error_msg}")
-            raise Exception(f"Failed to cut clip using FFmpeg: {error_msg}")
-        except FileNotFoundError:
-            raise Exception("FFmpeg not found. Please ensure it is installed and in your PATH.")
-
-    def generate_srt(self, segments, start_offset, duration, srt_path):
-        """Helper to generate an SRT file for a specific clip timeframe."""
-        end_time = start_offset + duration
-        relevant_segments = [
-            s for s in segments 
-            if s['start'] < end_time and s['end'] > start_offset
-        ]
-        
-        with open(srt_path, "w", encoding="utf-8") as f:
-            for i, seg in enumerate(relevant_segments):
-                # Calculate local start/end within the clip
-                local_start = max(0, seg['start'] - start_offset)
-                local_end = min(duration, seg['end'] - start_offset)
-                
-                # Format timestamps for SRT (HH:MM:SS,mmm)
-                def format_timestamp(seconds):
-                    hours = int(seconds // 3600)
-                    minutes = int((seconds % 3600) // 60)
-                    secs = int(seconds % 60)
-                    millis = int((seconds - int(seconds)) * 1000)
-                    return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
-
-                f.write(f"{i+1}\n")
-                f.write(f"{format_timestamp(local_start)} --> {format_timestamp(local_end)}\n")
-                f.write(f"{seg['text'].strip()}\n\n")
-        return srt_path
-
-    def add_captions(self, video_path, transcript_segments, output_path, start_offset, duration, style_type="minimal"):
-        """
-        Step 6: Burn Captions into Reel using FFmpeg.
-        Improved styling based on viral category.
-        """
-        print(f"Burning style-based captions ({style_type}) into {video_path}...")
-        srt_path = video_path.replace(".mp4", ".srt")
-        try:
             # 1. Generate SRT file
-            self.generate_srt(transcript_segments, start_offset, duration, srt_path)
+            self.generate_srt(transcript_segments, start_time, duration, srt_path, hook=hook)
             
-            # 2. Define style based on type
-            # Modern Reel Styles:
+            # 2. Define Caption Style
             styles = {
                 "educational": (
                     "Alignment=2,Fontsize=24,PrimaryColour=&H00FFFFFF,SecondaryColour=&H00000000,"
@@ -282,25 +313,50 @@ class VideoProcessor:
                     "Outline=1,OutlineColour=&H000000,BorderStyle=1,MarginV=60,Fontname=Helvetica"
                 )
             }
-            
             selected_style = styles.get(style_type, styles["minimal"])
             
-            # 2. Burn subtitles using FFmpeg
+            fade_duration = 0.5
+            fade_out_start = max(0, duration - fade_duration)
             escaped_srt_path = srt_path.replace('\\', '/').replace(':', '\\:')
+            
+            # 3. Unified Filter Chain
+            if aspect_ratio > 0.6: # Wider than 9:16
+                video_filters = (
+                    f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg];"
+                    f"[0:v]scale=1080:-1[fg];"
+                    f"[bg][fg]overlay=(W-w)/2:(H-h)/2,"
+                    f"subtitles='{escaped_srt_path}':force_style='{selected_style}',"
+                    f"fade=t=in:st=0:d={fade_duration},fade=t=out:st={fade_out_start}:d={fade_duration}"
+                )
+            else: # Already vertical
+                video_filters = (
+                    f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                    f"subtitles='{escaped_srt_path}':force_style='{selected_style}',"
+                    f"fade=t=in:st=0:d={fade_duration},fade=t=out:st={fade_out_start}:d={fade_duration}"
+                )
+                
+            audio_filters = f"afade=t=in:st=0:d={fade_duration},afade=t=out:st={fade_out_start}:d={fade_duration}"
             
             command = [
                 'ffmpeg', '-y',
+                '-ss', str(start_time),
+                '-to', str(end_time),
                 '-i', video_path,
-                '-vf', f"subtitles='{escaped_srt_path}':force_style='{selected_style}'",
+                '-filter_complex', f"[0:v]{video_filters}[v];[0:a]{audio_filters}[a]",
+                '-map', '[v]',
+                '-map', '[a]',
                 '-c:v', 'libx264',
                 '-preset', 'slow',
                 '-crf', '18',
-                '-c:a', 'copy',
+                '-pix_fmt', 'yuv420p',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-sn', # EXPLICITLY DISABLE SUBTITLE STREAMS to fix double captioning bug
                 output_path
             ]
             
             subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-            print(f"Successfully burned styled captions ({style_type}) into {output_path}")
+            print(f"Successfully exported high-quality unified reel to {output_path}")
             
             # Clean up SRT
             if os.path.exists(srt_path):
@@ -309,12 +365,11 @@ class VideoProcessor:
             return output_path
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr.decode()
-            print(f"FFmpeg captioning error: {error_msg}")
-            # If burning fails, return original video
-            return video_path
-        except Exception as e:
-            print(f"Error in add_captions: {e}")
-            return video_path
+            print(f"FFmpeg unified processing error: {error_msg}")
+            raise Exception(f"Failed to process reel using FFmpeg: {error_msg}")
+        finally:
+            if os.path.exists(srt_path):
+                os.remove(srt_path)
 
     def generate_thumbnail(self, video_path, output_path, text="VIRAL MOMENT", style_type="hype"):
         """

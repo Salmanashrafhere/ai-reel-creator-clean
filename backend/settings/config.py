@@ -21,7 +21,11 @@ class Settings(BaseSettings):
     
     # Directory Settings
     # Use absolute paths or paths relative to the project root
-    BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # We move these to the project root (one level up from backend) 
+    # to avoid Uvicorn reload loops when files are generated.
+    BACKEND_DIR: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    BASE_DIR: str = os.path.dirname(BACKEND_DIR)
+    
     UPLOAD_DIR: str = os.path.join(BASE_DIR, "uploads")
     OUTPUT_DIR: str = os.path.join(BASE_DIR, "outputs")
     AUDIO_DIR: str = os.path.join(BASE_DIR, "audio")

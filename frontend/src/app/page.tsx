@@ -6,7 +6,7 @@ import ReelCard from "@/components/ReelCard";
 import VideoModal from "@/components/VideoModal";
 import ProcessingStatus from "@/components/ProcessingStatus";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -20,121 +20,161 @@ export default function Home() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [isScriptLoaded, setIsScriptLoaded] = useState(false);
   const [previewData, setPreviewData] = useState<{ url: string; title: string } | null>(null);
   const googleAuthInitialized = useRef(false);
   const googlePromptCalled = useRef(false);
   const isMounted = useRef(true);
 
-  // Suppress development-only noise logs (GSI/FedCM and Next.js RSC)
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Suppress development-only noise logs (GSI/FedCM, Next.js RSC, and HMR/Turbopack)
   useEffect(() => {
-    if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+    if (typeof window !== "undefined") {
       const originalError = console.error;
       const originalWarn = console.warn;
       
+      const isNoise = (msg: string) => {
+        const noiseKeywords = [
+          "FedCM", "_rsc", "NetworkError", "ERR_ABORTED", 
+          "ERR_BLOCKED_BY_ORB", "turbopack", "HMR", 
+          "socket", "connection", "aborted", "localhost:3000",
+          "ERR_CONNECTION_REFUSED"
+        ];
+        return noiseKeywords.some(keyword => msg.toLowerCase().includes(keyword.toLowerCase()));
+      };
+
       console.error = (...args: any[]) => {
-        const msg = args[0]?.toString() || "";
-        if (msg.includes("FedCM") || msg.includes("_rsc") || msg.includes("NetworkError") || msg.includes("ERR_ABORTED") || msg.includes("ERR_BLOCKED_BY_ORB")) return;
+        const msg = args.map(arg => {
+          if (arg instanceof Error) return arg.message + " " + arg.stack;
+          if (typeof arg === 'object') return JSON.stringify(arg);
+          return String(arg);
+        }).join(" ");
+        
+        if (isNoise(msg)) return;
         originalError.apply(console, args);
       };
       
       console.warn = (...args: any[]) => {
-        const msg = args[0]?.toString() || "";
-        if (msg.includes("FedCM")) return;
+        const msg = args.map(arg => {
+          if (typeof arg === 'object') return JSON.stringify(arg);
+          return String(arg);
+        }).join(" ");
+        
+        if (isNoise(msg) || msg.includes("One Tap not displayed")) return;
         originalWarn.apply(console, args);
+      };
+
+      // Handle unhandled rejections which often catch aborted fetch noise
+      const handleRejection = (event: PromiseRejectionEvent) => {
+        const msg = event.reason?.toString() || "";
+        if (isNoise(msg)) {
+          event.preventDefault();
+        }
+      };
+
+      window.addEventListener("unhandledrejection", handleRejection);
+      return () => {
+        window.removeEventListener("unhandledrejection", handleRejection);
+        console.error = originalError;
+        console.warn = originalWarn;
       };
     }
   }, []);
 
-  // Single useEffect for Google Identity Services lifecycle
+  // 1. Load user from localStorage on mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem("user");
+      }
+    }
+  }, []);
+
+  // 2. Initialize and Render Google Auth
   useEffect(() => {
     isMounted.current = true;
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     
     if (!clientId) {
-      console.error("[Frontend] NEXT_PUBLIC_GOOGLE_CLIENT_ID is missing! Check your .env.local");
+      console.warn("[GSI] NEXT_PUBLIC_GOOGLE_CLIENT_ID is missing from environment variables");
+      return;
     }
 
-    // 1. Load user from localStorage
-    const savedUser = localStorage.getItem("user");
-    if (savedUser && !user) {
-      setUser(JSON.parse(savedUser));
-    }
+    let retryCount = 0;
+    const MAX_RETRIES = 20;
 
-    // 2. Initialize and Render Google Auth
     const initAndRender = () => {
-      if (typeof window === "undefined" || !clientId || !isMounted.current) return;
+      if (typeof window === "undefined" || !isMounted.current) return;
       
       const google = (window as any).google;
+      
+      // Check if GSI script is loaded
       if (!google?.accounts?.id) {
-        // If not loaded yet, retry in a bit
-        setTimeout(initAndRender, 500);
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          setTimeout(initAndRender, 500);
+        } else {
+          console.error("[GSI] Script failed to load after maximum retries");
+        }
         return;
       }
 
-      // Prevent duplicate initialization
+      // 1. Initialize Google Identity
       if (!googleAuthInitialized.current) {
         try {
           google.accounts.id.initialize({
             client_id: clientId,
             callback: handleCredentialResponse,
             auto_select: false,
-            use_fedcm_for_prompt: true, // Enable FedCM as it's the modern standard
+            use_fedcm_for_prompt: true,
             ux_mode: "popup",
-            cancel_on_tap_outside: true,
           });
           googleAuthInitialized.current = true;
-          console.log("[Frontend] GSI Initialized");
         } catch (err) {
-          console.error("[Frontend] GSI Init Failed:", err);
+          console.error("[GSI] Initialization failed:", err);
         }
       }
 
-      // Render button if not logged in
+      // 2. Render Button if user is logged out
       if (!user) {
         const btnContainer = document.getElementById("google-login-btn");
         if (btnContainer) {
           try {
             google.accounts.id.renderButton(btnContainer, {
-              theme: "filled_blue", // Better for dark SaaS UI
+              theme: "filled_blue",
               size: "large",
               shape: "pill",
               text: "signin_with",
-              logo_alignment: "left",
               width: 200
             });
-            console.log("[Frontend] Google Sign-In button rendered");
           } catch (err) {
-            console.error("[Frontend] GSI Button Render Failed:", err);
+            console.error("[GSI] Button render failed:", err);
           }
 
-          // One Tap Prompt (only once per session)
+          // 3. One Tap Prompt
           if (!googlePromptCalled.current) {
-            google.accounts.id.prompt((notification: any) => {
-              if (notification.isNotDisplayed()) {
-                console.warn("[Frontend] One Tap not displayed:", notification.getNotDisplayedReason());
-              }
-            });
+            google.accounts.id.prompt();
             googlePromptCalled.current = true;
           }
         } else {
-          // Container not found yet, retry
-          setTimeout(initAndRender, 100);
+          // Container not found yet, retry soon
+          setTimeout(initAndRender, 200);
         }
       }
     };
 
-    initAndRender();
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(initAndRender, 100);
 
     return () => {
       isMounted.current = false;
-      if (typeof window !== "undefined" && (window as any).google?.accounts?.id) {
-        try {
-          (window as any).google.accounts.id.cancel();
-        } catch (e) {}
-      }
+      clearTimeout(timer);
     };
-  }, [user, isScriptLoaded]);
+  }, [user]);
 
   const handleCredentialResponse = async (response: any) => {
     try {
@@ -193,7 +233,6 @@ export default function Home() {
   }, [showDashboard]);
 
   const copyToClipboard = async (text: string, id: string) => {
-    console.log(`[Frontend] Attempting to copy text for ID: ${id}`);
     try {
       // Modern API
       if (navigator.clipboard && window.isSecureContext) {
@@ -204,7 +243,6 @@ export default function Home() {
         throw new Error("Clipboard API not available or not secure context");
       }
     } catch (err) {
-      console.warn("[Frontend] navigator.clipboard failed, trying fallback:", err);
       try {
         const textArea = document.createElement("textarea");
         textArea.value = text;
@@ -243,39 +281,62 @@ export default function Home() {
   const handleUpload = async () => {
     if (!file) return;
 
-    console.log(`[Frontend] Starting upload for file: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`);
+    setErrorMessage(null);
     setStatus("uploading");
+    setUploadProgress(0);
+
     const formData = new FormData();
     formData.append("file", file);
 
     const token = localStorage.getItem("token");
-    const headers: any = {};
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-      console.log("[Frontend] User is authenticated, adding token to headers");
-    }
-
-    try {
-      console.log(`[Frontend] Calling POST ${API_BASE_URL}/api/v1/process`);
-      const response = await fetch(`${API_BASE_URL}/api/v1/process`, {
-        method: "POST",
-        body: formData,
-        headers: headers,
+    
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(percentComplete);
+          setProgress(percentComplete * 0.1); // Upload is first 10% of total progress
+        }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Upload failed");
-      }
+      xhr.addEventListener("load", async () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            setJobId(data.job_id);
+            setStatus("queued");
+            resolve(data);
+          } catch (e) {
+            setErrorMessage("Failed to parse server response");
+            setStatus("error");
+            reject(e);
+          }
+        } else {
+          let errorMsg = "Upload failed";
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            errorMsg = errorData.detail || errorMsg;
+          } catch (e) {}
+          setErrorMessage(errorMsg);
+          setStatus("error");
+          reject(new Error(errorMsg));
+        }
+      });
 
-      const data = await response.json();
-      console.log(`[Frontend] Upload successful. Received Job ID: ${data.job_id}`);
-      setJobId(data.job_id);
-      setStatus("queued");
-    } catch (error: any) {
-      console.error("[Frontend] Upload error:", error);
-      setStatus("error");
-    }
+      xhr.addEventListener("error", () => {
+        setErrorMessage("Network error occurred during upload");
+        setStatus("error");
+        reject(new Error("Network error"));
+      });
+
+      xhr.open("POST", `${API_BASE_URL}/api/v1/process`);
+      if (token) {
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      }
+      xhr.send(formData);
+    });
   };
 
   const handleDownload = async (url: string, title: string) => {
@@ -304,9 +365,31 @@ export default function Home() {
       });
       if (response.ok) {
         setReels((prev) => prev.filter((_, i) => i !== index));
+        // Also remove from history if we are in dashboard
+        setHistory((prev) => prev.filter((r) => !r.url.endsWith(filename)));
       }
     } catch (error) {
       console.error("Delete failed:", error);
+    }
+  };
+
+  const handleClearAll = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    if (!confirm("Are you sure you want to clear your entire library? This cannot be undone.")) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/user/reels`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        setHistory([]);
+        setReels([]);
+      }
+    } catch (error) {
+      console.error("Clear all failed:", error);
     }
   };
 
@@ -329,18 +412,17 @@ export default function Home() {
           if (!response.ok) throw new Error("Status check failed");
           
           const data = await response.json();
-          console.log(`[Frontend] Job ${jobId} Status: ${data.status} (${data.progress}%) - ${data.message}`);
           
           setStatus(data.status);
           setProgress(data.progress);
           setStatusMessage(data.message || "");
 
           if (data.status === "completed") {
-            console.log("[Frontend] Job completed successfully. Clips received:", data.result.clips.length);
             setReels(data.result.clips);
             setJobId(null);
           } else if (data.status === "failed") {
-            console.error("[Frontend] Job failed:", data.result.error);
+            setErrorMessage(data.result.error || "Processing failed at an unknown step");
+            setStatus("error");
             setJobId(null);
           }
         } catch (error) {
@@ -356,12 +438,6 @@ export default function Home() {
     <div className="flex flex-col min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-blue-500/30">
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_-20%,#3b82f615,transparent)] pointer-events-none"></div>
       <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] brightness-100 contrast-150 pointer-events-none"></div>
-      
-      <Script 
-        src="https://accounts.google.com/gsi/client" 
-        strategy="afterInteractive" 
-        onLoad={() => setIsScriptLoaded(true)}
-      />
       
       <header className="px-6 py-4 flex items-center justify-between border-b border-white/5 bg-zinc-950/50 backdrop-blur-xl sticky top-0 z-50">
         <div className="flex items-center gap-3">
@@ -416,21 +492,31 @@ export default function Home() {
                   <h2 className="text-4xl font-bold tracking-tight text-white">Reel Library</h2>
                   <p className="text-zinc-500">Your collection of AI-generated viral moments.</p>
                 </div>
-                {history && history.length > 0 && (
-                  <button
-                    onClick={fetchHistory}
-                    className="flex items-center gap-2 text-sm font-semibold text-zinc-400 hover:text-white transition-colors"
-                  >
-                    <svg className={`w-4 h-4 ${loadingHistory ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Refresh
-                  </button>
-                )}
+                <div className="flex items-center gap-4">
+                  {history && history.length > 0 && (
+                    <button
+                      onClick={handleClearAll}
+                      className="text-sm font-semibold text-rose-500/70 hover:text-rose-500 transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                  {history && history.length > 0 && (
+                    <button
+                      onClick={fetchHistory}
+                      className="flex items-center gap-2 text-sm font-semibold text-zinc-400 hover:text-white transition-colors"
+                    >
+                      <svg className={`w-4 h-4 ${loadingHistory ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Refresh
+                    </button>
+                  )}
+                </div>
               </div>
 
               {loadingHistory ? (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                   {[1, 2, 3].map((i) => (
                     <div key={i} className="aspect-[9/16] bg-white/5 rounded-[2rem] animate-pulse border border-white/5 overflow-hidden">
                       <div className="h-full w-full bg-gradient-to-b from-transparent via-white/5 to-transparent -translate-y-full animate-[shimmer_2s_infinite]"></div>
@@ -438,7 +524,7 @@ export default function Home() {
                   ))}
                 </div>
               ) : (history && Array.isArray(history) && history.length > 0) ? (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                   {history.map((reel, index) => (
                     <ReelCard
                       key={index}
@@ -478,19 +564,19 @@ export default function Home() {
                   <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
                   AI Video Intelligence
                 </div>
-                <h1 className="text-5xl md:text-8xl font-black tracking-tight leading-[1.1] text-white">
+                <h1 className="text-4xl sm:text-6xl md:text-8xl font-black tracking-tight leading-[1.1] text-white">
                   Viral Reels <br />
                   <span className="text-blue-500">In Seconds.</span>
                 </h1>
-                <p className="text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed">
+                <p className="text-lg md:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed">
                   Automatically extract the most engaging moments from your long-form content, cropped and ready for social media.
                 </p>
               </section>
 
-              <section className="bg-white/5 border border-white/10 rounded-[3rem] p-16 text-center shadow-2xl backdrop-blur-md relative overflow-hidden group">
+              <section className="bg-white/5 border border-white/10 rounded-[2rem] sm:rounded-[3rem] p-6 sm:p-12 md:p-16 text-center shadow-2xl backdrop-blur-md relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-1000"></div>
                 
-                {status === "idle" || status === "error" ? (
+                {status === "idle" || status === "error" || status === "uploading" ? (
                   <div className="space-y-10 relative z-10">
                     <div className="flex flex-col items-center">
                       <div className="w-24 h-24 bg-zinc-900 text-blue-500 rounded-[2rem] flex items-center justify-center mb-8 rotate-3 border border-white/5 group-hover:rotate-0 transition-transform duration-500">
@@ -525,16 +611,27 @@ export default function Home() {
                       {file && (
                         <button
                           onClick={handleUpload}
-                          className="w-full max-w-sm bg-blue-600 hover:bg-blue-500 text-white font-bold py-6 rounded-[2rem] shadow-2xl shadow-blue-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+                          disabled={status === "uploading"}
+                          className="w-full max-w-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-6 rounded-[2rem] shadow-2xl shadow-blue-500/30 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
                         >
-                          Generate Viral Clips
+                          {status === "uploading" ? `Uploading ${uploadProgress}%...` : "Generate Viral Clips"}
                         </button>
                       )}
                     </div>
                     {status === "error" && (
-                      <p className="text-rose-400 font-medium bg-rose-500/10 py-3 px-6 rounded-2xl inline-block border border-rose-500/20">
-                        Something went wrong. Please try a different video.
-                      </p>
+                      <div className="space-y-4">
+                        <p className="text-rose-400 font-medium bg-rose-500/10 py-3 px-6 rounded-2xl inline-block border border-rose-500/20">
+                          {errorMessage || "Something went wrong. Please try a different video."}
+                        </p>
+                        <div>
+                          <button 
+                            onClick={() => setStatus("idle")}
+                            className="text-sm text-zinc-500 hover:text-white underline underline-offset-4"
+                          >
+                            Try Again
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 ) : (
@@ -561,7 +658,7 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                 {reels.map((reel, index) => (
                   <ReelCard
                     key={index}

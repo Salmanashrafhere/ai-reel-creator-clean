@@ -151,7 +151,7 @@ export default function ProcessingStatus({ progress, status, message }: Processi
         </div>
 
         {/* Individual Stage Icons */}
-        <div className="grid grid-cols-6 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 sm:gap-2">
           {stages.map((step, i) => {
             const isCompleted = progress >= step.min;
             const isActive = progress < step.min && (i === 0 || progress >= stages[i-1].min);

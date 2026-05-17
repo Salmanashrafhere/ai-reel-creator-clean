@@ -140,14 +140,22 @@ def process_video_task(job_id: str, file_path: str, user_id: Optional[int] = Non
     try:
         print(f"\n[JOB {job_id}] Video uploaded: {file_path}")
         jobs[job_id]["status"] = "processing"
-        jobs[job_id]["progress"] = 10
-        jobs[job_id]["message"] = "Upload complete, starting processing..."
+        jobs[job_id]["progress"] = 5
+        jobs[job_id]["message"] = "Normalizing video format..."
+        
+        # Step 1: Normalize Video (New)
+        # Ensure it's H.264 MP4 for best compatibility
+        normalized_path = os.path.join(settings.UPLOAD_DIR, f"norm_{job_id}.mp4")
+        processor.normalize_video(file_path, normalized_path)
+        # Replace original path with normalized path for subsequent steps
+        working_file_path = normalized_path
+        jobs[job_id]["progress"] = 15
         
         # Step 2: Extract Audio
         print(f"[JOB {job_id}] Extracting audio...")
         jobs[job_id]["message"] = "Extracting audio from video..."
         audio_path = os.path.join(settings.AUDIO_DIR, f"{job_id}.mp3")
-        processor.extract_audio(file_path, audio_path)
+        processor.extract_audio(working_file_path, audio_path)
         jobs[job_id]["progress"] = 30
         
         # Step 3: Whisper Transcript
@@ -193,10 +201,13 @@ def process_video_task(job_id: str, file_path: str, user_id: Optional[int] = Non
             output_filename = f"reel_{job_id}_{i}.mp4"
             final_output_path = os.path.join(settings.OUTPUT_DIR, output_filename)
             
+            # Step 5: Cut and Process Reel
+            jobs[job_id]["message"] = f"Cutting and applying styles to reel {i+1}..."
+            
             # Unified Processing (Step 5 & 6)
             print(f"[JOB {job_id}] Processing unified reel {i+1} (style: {moment.get('style', 'minimal')})...")
             final_path = processor.process_reel(
-                file_path,
+                working_file_path,
                 moment['start'],
                 moment['end'],
                 transcript['segments'],
@@ -204,6 +215,9 @@ def process_video_task(job_id: str, file_path: str, user_id: Optional[int] = Non
                 style_type=moment.get('style', 'minimal'),
                 hook=moment.get('hook')
             )
+            
+            # Step 7: Generate Thumbnail
+            jobs[job_id]["message"] = f"Generating thumbnail for reel {i+1}..."
             
             actual_output_filename = output_filename
             
@@ -269,9 +283,28 @@ async def process_video(
     file: UploadFile = File(...),
     user: Optional[DBUser] = Depends(get_current_user)
 ):
-    if not file.filename.endswith(('.mp4', '.mov', '.avi')):
-        raise HTTPException(status_code=400, detail="Unsupported file format")
+    # 1. Check file format
+    allowed_extensions = ('.mp4', '.mov', '.avi', '.mkv', '.hevc')
+    if not file.filename.lower().endswith(allowed_extensions):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Unsupported file format. Allowed: {', '.join(allowed_extensions)}"
+        )
     
+    # 2. Check file size (100MB limit)
+    MAX_SIZE = 100 * 1024 * 1024 # 100MB
+    # We need to read a bit to check size or use content-length header
+    # But since it's SpooledTemporaryFile, we can check its size
+    file.file.seek(0, 2) # Go to end
+    file_size = file.file.tell()
+    file.file.seek(0) # Back to start
+    
+    if file_size > MAX_SIZE:
+        raise HTTPException(
+            status_code=413, 
+            detail=f"File too large ({file_size / (1024*1024):.1f}MB). Maximum allowed is 100MB."
+        )
+
     job_id = str(uuid.uuid4())
     file_path = os.path.join(settings.UPLOAD_DIR, f"{job_id}_{file.filename}")
     
@@ -297,6 +330,38 @@ async def delete_reel(filename: str):
         os.remove(file_path)
         return {"message": "Reel deleted successfully"}
     raise HTTPException(status_code=404, detail="Reel not found")
+
+@app.delete("/api/v1/user/reels")
+async def delete_all_reels(user: DBUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Delete from database
+    reels = db.query(DBReel).filter(DBReel.user_id == user.id).all()
+    for reel in reels:
+        # Extract filename from URL (e.g., /outputs/reel_xxx.mp4)
+        filename = reel.video_url.split("/")[-1]
+        file_path = os.path.join(settings.OUTPUT_DIR, filename)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except:
+                pass
+        
+        # Also delete thumbnail
+        if reel.thumbnail_url:
+            thumb_filename = reel.thumbnail_url.split("/")[-1]
+            thumb_path = os.path.join(settings.THUMBNAIL_DIR, thumb_filename)
+            if os.path.exists(thumb_path):
+                try:
+                    os.remove(thumb_path)
+                except:
+                    pass
+
+    db.query(DBReel).filter(DBReel.user_id == user.id).delete()
+    db.commit()
+    
+    return {"message": "All reels cleared"}
 
 @app.get("/")
 async def health_check():

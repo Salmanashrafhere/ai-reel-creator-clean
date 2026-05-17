@@ -53,6 +53,35 @@ class VideoProcessor:
         except FileNotFoundError:
             raise Exception("FFmpeg not found. Please ensure it is installed and in your PATH.")
 
+    def normalize_video(self, input_path, output_path):
+        """
+        Normalize uploaded video to H.264/AAC MP4.
+        Ensures compatibility with mobile formats like HEVC/MOV.
+        """
+        print(f"Normalizing video {input_path} to {output_path}...")
+        try:
+            command = [
+                'ffmpeg', '-y',
+                '-i', input_path,
+                '-c:v', 'libx264',    # H.264 video codec
+                '-preset', 'ultrafast', # Fast encoding
+                '-crf', '23',          # Good quality balance
+                '-c:a', 'aac',         # AAC audio codec
+                '-b:a', '128k',        # Standard audio bitrate
+                '-movflags', '+faststart', # Web optimization
+                output_path
+            ]
+            
+            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            print(f"Successfully normalized video to {output_path}")
+            return output_path
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.decode()
+            print(f"Normalization failed: {error_msg}")
+            raise Exception(f"Video format conversion failed: {error_msg}")
+        except FileNotFoundError:
+            raise Exception("FFmpeg not found. Cannot normalize video.")
+
     def transcribe(self, media_path):
         """Step 3: Whisper Transcript."""
         print(f"Transcribing {media_path}...")

@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     MAX_VIDEO_SIZE_MB: int = int(os.getenv("MAX_VIDEO_SIZE_MB", "500"))
     
     # CORS Settings
-    ALLOWED_ORIGINS: List[str] = ["*"]
+    ALLOWED_ORIGINS: List[str] = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
     model_config = {
         "env_file": ".env",

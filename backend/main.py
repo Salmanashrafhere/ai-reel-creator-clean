@@ -10,7 +10,11 @@ import json
 import subprocess
 import shutil
 import sys
+import warnings
 from typing import List, Optional
+
+# Suppress the deprecation warning for google-generativeai globally
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
 from jose import JWTError, jwt
 from fastapi.security import OAuth2PasswordBearer
 from google.oauth2 import id_token
@@ -50,11 +54,23 @@ def check_dependencies():
     print("--- [STARTUP DEBUG] ---", flush=True)
     print("CWD:", os.getcwd(), flush=True)
     print("PATH:", os.environ.get("PATH"), flush=True)
-    print("FFMPEG PATH:", shutil.which("ffmpeg"), flush=True)
+    
+    # Try multiple ways to find ffmpeg
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        # Common locations for ffmpeg in linux/railway
+        fallbacks = ["/usr/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/app/.nix-profile/bin/ffmpeg"]
+        for path in fallbacks:
+            if os.path.exists(path):
+                ffmpeg_path = path
+                break
+                
+    print("FFMPEG PATH:", ffmpeg_path, flush=True)
     
     try:
         # Try to run ffmpeg -version and capture output
-        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+        cmd = ffmpeg_path if ffmpeg_path else 'ffmpeg'
+        result = subprocess.run([cmd, '-version'], capture_output=True, text=True)
         if result.returncode == 0:
             print("--- [DEPENDENCY CHECK] FFmpeg found ---", flush=True)
             print("FFmpeg version info (first line):", result.stdout.split('\n')[0], flush=True)

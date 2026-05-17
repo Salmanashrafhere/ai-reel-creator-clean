@@ -589,10 +589,10 @@ export default function Home() {
             </div>
             <span className="text-lg font-bold text-white tracking-tight">ReelAI</span>
           </div>
-          <p className="text-sm text-zinc-500">© 2026 ReelAI Creator. Built with Next.js and AI Intelligence.</p>
+          <p className="text-sm text-zinc-500">© 2026 ReelAI Creator. Developed by Salman Ashraf.</p>
           <div className="flex items-center gap-6">
-            <a href="#" className="text-zinc-500 hover:text-white transition-colors">Twitter</a>
-            <a href="#" className="text-zinc-500 hover:text-white transition-colors">GitHub</a>
+            <a href="https://www.linkedin.com/in/muhammad-salman-b67b19259/" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-white transition-colors">LinkedIn</a>
+            <a href="https://github.com/Salmanashrafhere" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-white transition-colors">GitHub</a>
           </div>
         </div>
       </footer>

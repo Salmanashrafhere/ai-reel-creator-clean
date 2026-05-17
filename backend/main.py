@@ -8,6 +8,7 @@ import os
 import uuid
 import json
 import subprocess
+import shutil
 from typing import List, Optional
 from jose import JWTError, jwt
 from fastapi.security import OAuth2PasswordBearer
@@ -45,6 +46,7 @@ def create_access_token(data: dict):
 
 def check_dependencies():
     """Check if FFmpeg is installed and accessible."""
+    print("FFMPEG PATH:", shutil.which("ffmpeg"))
     try:
         subprocess.run(['ffmpeg', '-version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("--- [DEPENDENCY CHECK] FFmpeg found ---")

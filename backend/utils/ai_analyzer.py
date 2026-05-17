@@ -1,7 +1,11 @@
 import os
 import google.generativeai as genai
 import json
+import warnings
 from typing import List, Dict
+
+# Suppress the deprecation warning for google-generativeai
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
 
 class GeminiAnalyzer:
     def __init__(self, api_key: str):

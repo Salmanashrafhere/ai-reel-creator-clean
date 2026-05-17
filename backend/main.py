@@ -9,6 +9,7 @@ import uuid
 import json
 import subprocess
 import shutil
+import sys
 from typing import List, Optional
 from jose import JWTError, jwt
 from fastapi.security import OAuth2PasswordBearer
@@ -46,30 +47,32 @@ def create_access_token(data: dict):
 
 def check_dependencies():
     """Check if FFmpeg is installed and accessible."""
-    print("--- [STARTUP DEBUG] ---")
-    print("CWD:", os.getcwd())
-    print("PATH:", os.environ.get("PATH"))
-    print("FFMPEG PATH:", shutil.which("ffmpeg"))
+    print("--- [STARTUP DEBUG] ---", flush=True)
+    print("CWD:", os.getcwd(), flush=True)
+    print("PATH:", os.environ.get("PATH"), flush=True)
+    print("FFMPEG PATH:", shutil.which("ffmpeg"), flush=True)
     
     try:
         # Try to run ffmpeg -version and capture output
         result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
         if result.returncode == 0:
-            print("--- [DEPENDENCY CHECK] FFmpeg found ---")
-            print("FFmpeg version info (first line):", result.stdout.split('\n')[0])
+            print("--- [DEPENDENCY CHECK] FFmpeg found ---", flush=True)
+            print("FFmpeg version info (first line):", result.stdout.split('\n')[0], flush=True)
         else:
-            print(f"!!! [DEPENDENCY ERROR] FFmpeg returned non-zero exit code: {result.returncode} !!!")
-            print("Stderr:", result.stderr)
+            print(f"!!! [DEPENDENCY ERROR] FFmpeg returned non-zero exit code: {result.returncode} !!!", flush=True)
+            print("Stderr:", result.stderr, flush=True)
     except FileNotFoundError:
-        print("!!! [DEPENDENCY ERROR] FFmpeg NOT FOUND in PATH !!!")
-        print("Please ensure FFmpeg is installed and added to your PATH.")
-    print("--- [END STARTUP DEBUG] ---")
+        print("!!! [DEPENDENCY ERROR] FFmpeg NOT FOUND in PATH !!!", flush=True)
+        print("Please ensure FFmpeg is installed and added to your PATH.", flush=True)
+    print("--- [END STARTUP DEBUG] ---", flush=True)
 
 # Initialize Video Processor with Gemini API Key
 processor = VideoProcessor(model_name=settings.WHISPER_MODEL, gemini_api_key=settings.GEMINI_API_KEY)
 
 # Run dependency check on startup
-check_dependencies()
+@app.on_event("startup")
+async def startup_event():
+    check_dependencies()
 
 # Configure CORS
 app.add_middleware(
@@ -81,7 +84,7 @@ app.add_middleware(
 )
 
 # Serve generated reels as static files
-print(f"Mounting static directories:\n- Outputs: {settings.OUTPUT_DIR}\n- Thumbnails: {settings.THUMBNAIL_DIR}")
+print(f"Mounting static directories:\n- Outputs: {settings.OUTPUT_DIR}\n- Thumbnails: {settings.THUMBNAIL_DIR}", flush=True)
 app.mount("/outputs", StaticFiles(directory=settings.OUTPUT_DIR), name="outputs")
 app.mount("/thumbnails", StaticFiles(directory=settings.THUMBNAIL_DIR), name="thumbnails")
 

@@ -83,7 +83,7 @@ export default function ProcessingStatus({ progress, status, message }: Processi
           {/* Circular Progress Container */}
           <div className="relative w-40 h-40 flex items-center justify-center">
             {/* Background Track */}
-            <svg className="absolute inset-0 w-full h-full -rotate-90">
+            <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 160 160">
               <circle
                 cx="80"
                 cy="80"

@@ -21,14 +21,35 @@ export default function Home() {
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [previewData, setPreviewData] = useState<{ url: string; title: string } | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
   const googleAuthInitialized = useRef(false);
   const googlePromptCalled = useRef(false);
-  const isMounted = useRef(true);
+  const isMountedRef = useRef(true);
 
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Suppress development-only noise logs (GSI/FedCM, Next.js RSC, and HMR/Turbopack)
+  // 1. Initial Mount
+  useEffect(() => {
+    setIsMounted(true);
+    isMountedRef.current = true;
+    
+    // Load user from localStorage
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem("user");
+      }
+    }
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // 2. Suppress development-only noise logs (GSI/FedCM, Next.js RSC, and HMR/Turbopack)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const originalError = console.error;
@@ -82,21 +103,10 @@ export default function Home() {
     }
   }, []);
 
-  // 1. Load user from localStorage on mount
+  // 3. Initialize and Render Google Auth
   useEffect(() => {
-    const savedUser = localStorage.getItem("user");
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (e) {
-        localStorage.removeItem("user");
-      }
-    }
-  }, []);
-
-  // 2. Initialize and Render Google Auth
-  useEffect(() => {
-    isMounted.current = true;
+    if (!isMounted) return;
+    
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     
     if (!clientId) {
@@ -108,7 +118,7 @@ export default function Home() {
     const MAX_RETRIES = 20;
 
     const initAndRender = () => {
-      if (typeof window === "undefined" || !isMounted.current) return;
+      if (typeof window === "undefined" || !isMountedRef.current) return;
       
       const google = (window as any).google;
       
@@ -171,10 +181,9 @@ export default function Home() {
     const timer = setTimeout(initAndRender, 100);
 
     return () => {
-      isMounted.current = false;
       clearTimeout(timer);
     };
-  }, [user]);
+  }, [user, isMounted]);
 
   const handleCredentialResponse = async (response: any) => {
     try {
@@ -454,7 +463,9 @@ export default function Home() {
           </span>
         </div>
         <div className="flex items-center gap-6">
-          {user ? (
+          {!isMounted ? (
+            <div className="min-w-[200px] min-h-[40px]"></div>
+          ) : user ? (
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setShowDashboard(!showDashboard)}

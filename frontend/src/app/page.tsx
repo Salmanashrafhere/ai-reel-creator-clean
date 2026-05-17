@@ -443,6 +443,16 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [jobId, status]);
 
+  // Hydration Guard: Ensure we only render the UI after the client has mounted.
+  // This prevents React Minified Errors #418 and #423.
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-blue-500/30">
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_-20%,#3b82f615,transparent)] pointer-events-none"></div>

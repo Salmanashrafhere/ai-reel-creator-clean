@@ -46,16 +46,24 @@ def create_access_token(data: dict):
 
 def check_dependencies():
     """Check if FFmpeg is installed and accessible."""
+    print("--- [STARTUP DEBUG] ---")
+    print("CWD:", os.getcwd())
+    print("PATH:", os.environ.get("PATH"))
     print("FFMPEG PATH:", shutil.which("ffmpeg"))
+    
     try:
-        subprocess.run(['ffmpeg', '-version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print("--- [DEPENDENCY CHECK] FFmpeg found ---")
+        # Try to run ffmpeg -version and capture output
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("--- [DEPENDENCY CHECK] FFmpeg found ---")
+            print("FFmpeg version info (first line):", result.stdout.split('\n')[0])
+        else:
+            print(f"!!! [DEPENDENCY ERROR] FFmpeg returned non-zero exit code: {result.returncode} !!!")
+            print("Stderr:", result.stderr)
     except FileNotFoundError:
-        print("!!! [DEPENDENCY ERROR] FFmpeg NOT FOUND !!!")
+        print("!!! [DEPENDENCY ERROR] FFmpeg NOT FOUND in PATH !!!")
         print("Please ensure FFmpeg is installed and added to your PATH.")
-        # In production, we might want to raise an error to stop the container from starting
-        # if FFmpeg is a hard requirement.
-        # raise RuntimeError("FFmpeg is required but not found.")
+    print("--- [END STARTUP DEBUG] ---")
 
 # Initialize Video Processor with Gemini API Key
 processor = VideoProcessor(model_name=settings.WHISPER_MODEL, gemini_api_key=settings.GEMINI_API_KEY)

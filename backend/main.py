@@ -47,9 +47,13 @@ def check_dependencies():
     """Check if FFmpeg is installed and accessible."""
     try:
         subprocess.run(['ffmpeg', '-version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print("FFmpeg found")
+        print("--- [DEPENDENCY CHECK] FFmpeg found ---")
     except FileNotFoundError:
-        print("FFmpeg NOT FOUND. Please install FFmpeg and add it to your PATH.")
+        print("!!! [DEPENDENCY ERROR] FFmpeg NOT FOUND !!!")
+        print("Please ensure FFmpeg is installed and added to your PATH.")
+        # In production, we might want to raise an error to stop the container from starting
+        # if FFmpeg is a hard requirement.
+        # raise RuntimeError("FFmpeg is required but not found.")
 
 # Initialize Video Processor with Gemini API Key
 processor = VideoProcessor(model_name=settings.WHISPER_MODEL, gemini_api_key=settings.GEMINI_API_KEY)

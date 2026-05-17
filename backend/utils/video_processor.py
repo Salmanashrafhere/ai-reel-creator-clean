@@ -51,7 +51,11 @@ class VideoProcessor:
             print(f"FFmpeg error: {error_msg}")
             raise Exception(f"Failed to extract audio using FFmpeg: {error_msg}")
         except FileNotFoundError:
-            raise Exception("FFmpeg not found. Please ensure it is installed and in your PATH.")
+            print("ERROR: FFmpeg executable not found in PATH.")
+            raise Exception(
+                "FFmpeg not found. This is required for audio extraction. "
+                "If on Railway, ensure nixpacks.toml is present. If local, install FFmpeg and add it to PATH."
+            )
 
     def normalize_video(self, input_path, output_path):
         """
@@ -80,7 +84,11 @@ class VideoProcessor:
             print(f"Normalization failed: {error_msg}")
             raise Exception(f"Video format conversion failed: {error_msg}")
         except FileNotFoundError:
-            raise Exception("FFmpeg not found. Cannot normalize video.")
+            print("ERROR: FFmpeg executable not found in PATH.")
+            raise Exception(
+                "FFmpeg not found. This is required for video normalization and audio extraction. "
+                "If on Railway, ensure nixpacks.toml is present. If local, install FFmpeg and add it to PATH."
+            )
 
     def transcribe(self, media_path):
         """Step 3: Whisper Transcript."""
